@@ -1,0 +1,15 @@
+package com.nageoffer.shortlink.admin.dto.resq;
+
+import lombok.Data;
+
+/**
+ * 短链接分组创建的DTO
+ */
+@Data
+public class ShortLinkGroupSaveReqDTO {
+
+    /**
+     * 分组名
+     */
+    private String name;
+}
