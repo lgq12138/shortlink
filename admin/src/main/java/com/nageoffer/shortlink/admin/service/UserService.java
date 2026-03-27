@@ -5,9 +5,9 @@ import com.nageoffer.shortlink.admin.dao.entity.UserDO;
 import com.nageoffer.shortlink.admin.dto.resp.UserActualRespDTO;
 import com.nageoffer.shortlink.admin.dto.resp.UserLoginRespDTO;
 import com.nageoffer.shortlink.admin.dto.resp.UserRespDTO;
-import com.nageoffer.shortlink.admin.dto.resq.UserLoginReqDTO;
-import com.nageoffer.shortlink.admin.dto.resq.UserRegisterReqDTO;
-import com.nageoffer.shortlink.admin.dto.resq.UserUpdateReqDTO;
+import com.nageoffer.shortlink.admin.dto.req.UserLoginReqDTO;
+import com.nageoffer.shortlink.admin.dto.req.UserRegisterReqDTO;
+import com.nageoffer.shortlink.admin.dto.req.UserUpdateReqDTO;
 
 public interface UserService extends IService<UserDO> {
     UserRespDTO getUserByUserName(String username);

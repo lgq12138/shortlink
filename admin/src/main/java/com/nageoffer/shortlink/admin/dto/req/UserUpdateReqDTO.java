@@ -1,9 +1,9 @@
-package com.nageoffer.shortlink.admin.dto.resq;
+package com.nageoffer.shortlink.admin.dto.req;
 
 import lombok.Data;
 
 @Data
-public class UserRegisterReqDTO {
+public class UserUpdateReqDTO {
 
     /**
      * 用户名

@@ -12,37 +12,44 @@ import com.nageoffer.shortlink.admin.common.convention.errorcode.BaseErrorCode;
 import com.nageoffer.shortlink.admin.common.convention.exception.ClientException;
 import com.nageoffer.shortlink.admin.dao.entity.UserDO;
 import com.nageoffer.shortlink.admin.dao.mapper.UserMapper;
+import com.nageoffer.shortlink.admin.dto.req.UserLoginReqDTO;
+import com.nageoffer.shortlink.admin.dto.req.UserRegisterReqDTO;
+import com.nageoffer.shortlink.admin.dto.req.UserUpdateReqDTO;
 import com.nageoffer.shortlink.admin.dto.resp.UserActualRespDTO;
 import com.nageoffer.shortlink.admin.dto.resp.UserLoginRespDTO;
 import com.nageoffer.shortlink.admin.dto.resp.UserRespDTO;
-import com.nageoffer.shortlink.admin.dto.resq.UserLoginReqDTO;
-import com.nageoffer.shortlink.admin.dto.resq.UserRegisterReqDTO;
-import com.nageoffer.shortlink.admin.dto.resq.UserUpdateReqDTO;
+import com.nageoffer.shortlink.admin.service.GroupService;
 import com.nageoffer.shortlink.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static com.nageoffer.shortlink.admin.common.constant.RedisCacheConstant.LOCK_USER_REGISTER_KEY;
 import static com.nageoffer.shortlink.admin.common.constant.RedisCacheConstant.USER_LOGIN_KEY;
 import static com.nageoffer.shortlink.admin.common.convention.errorcode.BaseErrorCode.USER_NAME_EXIST_ERROR;
 import static com.nageoffer.shortlink.admin.common.convention.errorcode.BaseErrorCode.USER_SAVE_ERROR;
+import static com.nageoffer.shortlink.admin.common.enums.UserErrorCodeEnum.USER_EXIST;
+import static com.nageoffer.shortlink.admin.common.enums.UserErrorCodeEnum.USER_NAME_EXIST;
 
 /**
  * 用户接口实现层
  */
-@RequiredArgsConstructor
+
 @Service
+@RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements UserService {
     private final RBloomFilter<String> userRegisterCachePenetrationBloomFilter;
     private final RedissonClient redissonClient;
     private final StringRedisTemplate stringRedisTemplate;
+    private final GroupService groupService;
     @Override
     public UserRespDTO getUserByUserName(String userName) {
         LambdaQueryWrapper<UserDO> eq = Wrappers.lambdaQuery(UserDO.class).
@@ -79,18 +86,25 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
         if(!hasUserName(requestParam.getUsername())){
             throw new ClientException(USER_NAME_EXIST_ERROR);
         }
-        RLock lock=redissonClient.getLock("short-link:lock_user-register:"+requestParam);
+        RLock lock = redissonClient.getLock(LOCK_USER_REGISTER_KEY + requestParam.getUsername());
         try {
-            if(lock.tryLock()){
-                int insert=baseMapper.insert(BeanUtil.toBean(requestParam,UserDO.class));
-                if(insert<1){
-                    throw new ClientException(USER_SAVE_ERROR);
+            if (lock.tryLock()) {
+                try {
+                    int inserted = baseMapper.insert(BeanUtil.toBean(requestParam, UserDO.class));
+                    if (inserted < 1) {
+                        throw new ClientException(USER_SAVE_ERROR);
+                    }
+                } catch (DuplicateKeyException ex) {
+                    throw new ClientException(USER_EXIST);
                 }
                 userRegisterCachePenetrationBloomFilter.add(requestParam.getUsername());
+                // 注册接口本身没有登录态，因此不能依赖 UserContext（可能为 null）
+                // t_group 是按 username 分片，必须保证分片键非空
+                groupService.saveGroup(requestParam.getUsername(), "默认分组");
                 return;
             }
-            throw new ClientException(USER_NAME_EXIST_ERROR);
-        }finally {
+            throw new ClientException(USER_NAME_EXIST);
+        } finally {
             lock.unlock();
         }
     }

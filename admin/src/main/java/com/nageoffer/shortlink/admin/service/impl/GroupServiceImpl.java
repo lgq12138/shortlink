@@ -6,40 +6,70 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nageoffer.shortlink.admin.common.biz.user.UserContext;
+import com.nageoffer.shortlink.admin.common.convention.result.Result;
 import com.nageoffer.shortlink.admin.dao.entity.GroupDO;
 import com.nageoffer.shortlink.admin.dao.mapper.GroupMapper;
+import com.nageoffer.shortlink.admin.dto.req.ShortLinkGroupSortReqDTO;
+import com.nageoffer.shortlink.admin.dto.req.ShortLinkGroupUpdateReqDTO;
 import com.nageoffer.shortlink.admin.dto.resp.ShortLinkGroupRespDTO;
-import com.nageoffer.shortlink.admin.dto.resq.ShortLinkGroupSortReqDTO;
-import com.nageoffer.shortlink.admin.dto.resq.ShortLinkGroupUpdateReqDTO;
+import com.nageoffer.shortlink.admin.remote.dto.ShortLinkRemoteService;
 import com.nageoffer.shortlink.admin.service.GroupService;
 import com.nageoffer.shortlink.admin.toolkit.RandomGenerator;
+import com.nageoffer.shortlink.project.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-
+import java.util.Objects;
+import java.util.Optional;
+/**
+ * 短链接分组接口实现层
+ */
 @Slf4j
 @Service
 public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implements GroupService {
+    /**
+     * 后续重构为 SpringCloud Feign 调用
+     */
+    ShortLinkRemoteService shortLinkRemoteService = new ShortLinkRemoteService() {
+    };
     @Override
-    public void saveGroup(String name) {
-        String gid;
-        do{
-            gid= RandomGenerator.generateRandom();
-        }while(hasGid(gid));
-        GroupDO groupDO= GroupDO.builder().gid(gid).name(name).sortOrder(0).username(UserContext.getUsername())
-                .build();
-        baseMapper.insert(groupDO);
-
+    public void saveGroup(String groupName) {
+        saveGroup(UserContext.getUsername(), groupName);
     }
+
+    @Override
+    public void saveGroup(String username, String groupName) {
+        String gid;
+        do {
+            gid = RandomGenerator.generateRandom();
+        } while (!hasGid(username, gid));
+        GroupDO groupDO = GroupDO.builder()
+            .gid(gid)
+            .sortOrder(0)
+            .username(UserContext.getUsername())
+            .username(username)
+            .name(groupName)
+            .build();
+        baseMapper.insert(groupDO);
+}
 
     @Override
     public List<ShortLinkGroupRespDTO> listGroup() {
         LambdaQueryWrapper<GroupDO> groupDOLambdaQueryWrapper = Wrappers.lambdaQuery(GroupDO.class)
                 .eq(GroupDO::getUsername, UserContext.getUsername())
                 .eq(GroupDO::getDelFlag, 0).orderByAsc(GroupDO::getSortOrder, GroupDO::getUpdateTime);
-        List<GroupDO> groupDOS = baseMapper.selectList(groupDOLambdaQueryWrapper);
-        return BeanUtil.copyToList(groupDOS,ShortLinkGroupRespDTO.class);
+        List<GroupDO> groupDOList = baseMapper.selectList(groupDOLambdaQueryWrapper);
+        Result<List<ShortLinkGroupCountQueryRespDTO>> listResult = shortLinkRemoteService
+                .listGroupShortLinkCount(groupDOList.stream().map(GroupDO::getGid).toList());
+        List<ShortLinkGroupRespDTO> shortLinkGroupRespDTOList = BeanUtil.copyToList(groupDOList, ShortLinkGroupRespDTO.class);
+        shortLinkGroupRespDTOList.forEach(each -> {
+            Optional<ShortLinkGroupCountQueryRespDTO> first = listResult.getData().stream()
+                    .filter(item -> Objects.equals(item.getGid(), each.getGid()))
+                    .findFirst();
+            first.ifPresent(item -> each.setShortLinkCount(first.get().getShortLinkCount()));
+        });
+        return shortLinkGroupRespDTOList;
     }
 
     @Override
@@ -79,14 +109,12 @@ public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implemen
         });
     }
 
-    private boolean hasGid(String gid){
-        LambdaQueryWrapper<GroupDO> eq = Wrappers.lambdaQuery(GroupDO.class)
-                .eq(GroupDO::getGid,gid)
-                .eq(GroupDO::getUsername, UserContext.getUsername())
-                .eq(GroupDO::getDelFlag,0);
-        GroupDO groupDO = baseMapper.selectOne(eq);
-        return groupDO!=null;
+    private boolean hasGid(String username, String gid) {
+        LambdaQueryWrapper<GroupDO> queryWrapper = Wrappers.lambdaQuery(GroupDO.class)
+                .eq(GroupDO::getGid, gid)
+                .eq(GroupDO::getUsername, Optional.ofNullable(username).orElse(UserContext.getUsername()));
+        GroupDO hasGroupFlag = baseMapper.selectOne(queryWrapper);
+        return hasGroupFlag == null;
     }
-
 
 }
